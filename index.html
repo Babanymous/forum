@@ -5,11 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BabaForum</title>
     
-    <!-- CRASH REPORTER: This will tell us why the screen is black -->
+    <!-- Error Handler -->
     <script>
-        window.onerror = function(msg, url, line, col, error) {
-            alert("⚠️ ERROR DETECTED:\n" + msg + "\nLine: " + line);
-            return false;
+        window.onerror = function(msg, url, line) {
+            document.body.innerHTML = '<div style="color:red; padding:20px; background:black;"><h1>Error</h1><p>'+msg+'</p><p>Line: '+line+'</p></div>';
         };
     </script>
 
@@ -63,9 +62,23 @@
                 auth = firebase.auth();
                 db = firebase.firestore();
             }
-        } catch (e) { alert("Firebase Init Error: " + e.message); }
+        } catch (e) { console.error(e); }
 
         const { useState, useEffect, useRef } = React;
+
+        // --- SETUP SCREEN MOVED TO TOP ---
+        function SetupScreen() {
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
+                    <div className="glass-panel p-8 rounded-2xl text-center fade-in">
+                        <i className="fa-solid fa-wrench text-indigo-400 text-3xl mb-4 block"></i>
+                        <h1 className="text-2xl font-bold text-white mb-2">Setup Required</h1>
+                        <p className="text-slate-400 mb-6">Please add your Firebase Keys to index.html</p>
+                        <button onClick={() => window.location.reload()} className="btn-primary text-white px-6 py-2 rounded-lg">Refresh</button>
+                    </div>
+                </div>
+            );
+        }
 
         const ensureUserProfile = async (user) => {
             if(!user || !db) return;
@@ -180,12 +193,104 @@
             );
         }
 
+        function LikeButton({ user, docId, collection, likes, likedBy }) {
+            const [isLiked, setIsLiked] = useState(false);
+            const [count, setCount] = useState(likes || 0);
+            useEffect(() => { if (user && likedBy?.includes(user.uid)) setIsLiked(true); }, [user, likedBy]);
+            const handleLike = async (e) => {
+                e.stopPropagation();
+                if (!user) return alert("Please sign in to vote!");
+                const docRef = db.collection(collection).doc(docId);
+                const newStatus = !isLiked;
+                setIsLiked(newStatus);
+                setCount(prev => newStatus ? prev + 1 : prev - 1);
+                try {
+                    await docRef.update({
+                        likes: firebase.firestore.FieldValue.increment(newStatus ? 1 : -1),
+                        likedBy: newStatus ? firebase.firestore.FieldValue.arrayUnion(user.uid) : firebase.firestore.FieldValue.arrayRemove(user.uid)
+                    });
+                } catch (error) { setIsLiked(!newStatus); setCount(prev => newStatus ? prev - 1 : prev + 1); }
+            };
+            return (
+                <button onClick={handleLike} className={`flex items-center gap-1 px-2 py-1 rounded-md ${isLiked ? 'text-pink-500 bg-pink-500/10' : 'text-slate-500 hover:bg-slate-700'}`}>
+                    <i className={`${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart`}></i>
+                    <span className="text-xs font-bold">{count > 0 ? count : ''}</span>
+                </button>
+            );
+        }
+
+        function AdminDashboard({ onClose }) {
+            const [stats, setStats] = useState({ topics: 0, replies: 0 });
+            const [loading, setLoading] = useState(true);
+            useEffect(() => {
+                const fetchStats = async () => {
+                    const t = await db.collection('topics').get();
+                    const r = await db.collection('replies').get();
+                    setStats({ topics: t.size, replies: r.size });
+                    setLoading(false);
+                };
+                fetchStats();
+            }, []);
+            return (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 fade-in">
+                    <div className="glass-panel p-8 rounded-2xl max-w-md w-full relative">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><i className="fa-solid fa-xmark text-xl"></i></button>
+                        <h2 className="text-2xl font-bold text-white mb-6"><i className="fa-solid fa-shield-halved text-indigo-500 mr-2"></i> Admin Panel</h2>
+                        {loading ? <p className="text-slate-400">Loading...</p> : (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-slate-800 p-4 rounded-xl text-center border border-slate-700">
+                                    <div className="text-3xl font-bold text-white">{stats.topics}</div>
+                                    <div className="text-xs text-slate-400 uppercase">Topics</div>
+                                </div>
+                                <div className="bg-slate-800 p-4 rounded-xl text-center border border-slate-700">
+                                    <div className="text-3xl font-bold text-white">{stats.replies}</div>
+                                    <div className="text-xs text-slate-400 uppercase">Replies</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function Navbar({ user, onViewChange, onOpenAdmin }) {
+            const handleLogin = () => {
+                if (!auth) return alert("Config Error");
+                const provider = new firebase.auth.GoogleAuthProvider();
+                auth.signInWithPopup(provider).catch(e => alert(e.message));
+            };
+            const isAdmin = user && user.uid === ADMIN_UID;
+            return (
+                <nav className="glass-panel sticky top-0 z-50 border-b border-slate-700/50">
+                    <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => onViewChange('home')}>
+                            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">BabaForum</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            {user ? (
+                                <>
+                                    {isAdmin && <button onClick={onOpenAdmin} className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-3 py-1 rounded-lg text-xs font-bold border border-amber-500/30 transition-colors"><i className="fa-solid fa-lock mr-1"></i> Admin</button>}
+                                    <button onClick={() => { const p = user.uid; onViewChange('profile'); window.viewUserId = p; }} className="flex items-center gap-2 hover:bg-slate-800 px-2 py-1 rounded transition-colors">
+                                        <img src={user.photoURL} className="w-8 h-8 rounded-full border border-slate-600" /><span className="text-sm text-slate-300 hidden md:block">Me</span>
+                                    </button>
+                                    <button onClick={() => auth.signOut()} className="text-slate-400 hover:text-white"><i className="fa-solid fa-right-from-bracket"></i></button>
+                                </>
+                            ) : (
+                                <button onClick={handleLogin} className="btn-primary text-white px-6 py-2 rounded-lg font-medium"><i className="fa-brands fa-google mr-2"></i>Sign In</button>
+                            )}
+                        </div>
+                    </div>
+                </nav>
+            );
+        }
+
         function TopicList({ user, onViewChange, setCurrentTopic, setViewUserId }) {
             const [topics, setTopics] = useState([]);
             const [loading, setLoading] = useState(true);
             const [search, setSearch] = useState("");
             const [filter, setFilter] = useState('all'); 
             const [followingList, setFollowingList] = useState([]);
+            const isAdmin = user && user.uid === ADMIN_UID;
 
             useEffect(() => {
                 if(user && db) {
@@ -208,6 +313,8 @@
             });
 
             const goToProfile = (e, uid) => { e.stopPropagation(); setViewUserId(uid); onViewChange('profile'); };
+            const deleteTopic = async (e, id) => { e.stopPropagation(); if(confirm("Delete?")) await db.collection('topics').doc(id).delete(); };
+            const togglePin = async (e, topic) => { e.stopPropagation(); await db.collection('topics').doc(topic.id).update({ isPinned: !topic.isPinned }); };
 
             return (
                 <div className="max-w-5xl mx-auto p-4 fade-in space-y-6">
@@ -226,11 +333,21 @@
                         <div key={topic.id} onClick={() => {setCurrentTopic(topic); onViewChange('thread')}} className={`glass-panel p-5 rounded-xl cursor-pointer hover:bg-slate-800/80 flex gap-4 ${topic.isPinned ? 'border-l-4 border-amber-400' : ''}`}>
                             <div onClick={(e)=>goToProfile(e, topic.authorId)} className="flex-shrink-0 pt-1 cursor-pointer hover:opacity-80"><img src={topic.authorPhoto} className="w-10 h-10 rounded-full"/></div>
                             <div className="flex-1">
-                                <div className="flex justify-between"><h3 className="text-lg font-semibold text-slate-200">{topic.title}</h3>{topic.isPinned && <i className="fa-solid fa-thumbtack text-amber-400 text-xs"></i>}</div>
+                                <div className="flex justify-between">
+                                    <h3 className="text-lg font-semibold text-slate-200">{topic.title}</h3>
+                                    <div className="flex gap-2">
+                                        {isAdmin && <button onClick={(e)=>togglePin(e,topic)} className={`text-xs p-2 rounded ${topic.isPinned ? 'text-amber-400' : 'text-slate-600 hover:text-amber-400'}`}><i className="fa-solid fa-thumbtack"></i></button>}
+                                        {(isAdmin || user?.uid === topic.authorId) && <button onClick={(e)=>deleteTopic(e,topic.id)} className="text-slate-500 hover:text-red-400"><i className="fa-solid fa-trash"></i></button>}
+                                    </div>
+                                </div>
                                 <div className="text-slate-400 text-sm line-clamp-2 mt-1"><RichText content={topic.preview||""}/></div>
                                 <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
                                     <span onClick={(e)=>goToProfile(e, topic.authorId)} className="hover:text-indigo-400 cursor-pointer font-medium">{topic.authorName}</span>
                                     <span>{topic.tag}</span>
+                                    <div className="flex items-center gap-3 ml-auto">
+                                        <LikeButton user={user} docId={topic.id} collection="topics" likes={topic.likes} likedBy={topic.likedBy} />
+                                        <span><i className="fa-regular fa-comment-dots"></i> {topic.replyCount||0}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -271,6 +388,7 @@
             const [replies, setReplies] = useState([]);
             const [newReply, setNewReply] = useState('');
             const bottomRef = useRef(null);
+            const isAdmin = user && user.uid === ADMIN_UID;
             useEffect(() => {
                 if(!topic || !db) return;
                 const unsub = db.collection('replies').where('topicId','==',topic.id).orderBy('createdAt','asc').onSnapshot(s => setReplies(s.docs.map(d=>({id:d.id, ...d.data()}))));
@@ -283,6 +401,7 @@
                 batch.update(db.collection('topics').doc(topic.id), { replyCount: firebase.firestore.FieldValue.increment(1) });
                 await batch.commit(); setNewReply(''); setTimeout(() => bottomRef.current?.scrollIntoView({behavior:'smooth'}), 100);
             };
+            const deleteReply = async (id) => { if(confirm("Delete?")) { const b = db.batch(); b.delete(db.collection('replies').doc(id)); b.update(db.collection('topics').doc(topic.id), {replyCount: firebase.firestore.FieldValue.increment(-1)}); await b.commit(); }};
             return (
                 <div className="max-w-4xl mx-auto p-4 h-screen flex flex-col fade-in">
                     <button onClick={() => onViewChange('home')} className="text-slate-400 mb-4 w-fit"><i className="fa-solid fa-arrow-left"></i> Back</button>
@@ -299,7 +418,13 @@
                             <div key={r.id} className="glass-panel p-4 rounded-xl flex gap-4">
                                 <div onClick={() => { setViewUserId(r.authorId); onViewChange('profile'); }} className="cursor-pointer"><img src={r.authorPhoto} className="w-8 h-8 rounded-full"/></div>
                                 <div className="flex-1">
-                                    <div className="font-medium text-indigo-300 mb-2 cursor-pointer" onClick={() => { setViewUserId(r.authorId); onViewChange('profile'); }}>{r.authorName}</div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="font-medium text-indigo-300 mb-2 cursor-pointer" onClick={() => { setViewUserId(r.authorId); onViewChange('profile'); }}>{r.authorName}</span>
+                                        <div className="flex gap-2 items-center">
+                                            <LikeButton user={user} docId={r.id} collection="replies" likes={r.likes} likedBy={r.likedBy}/>
+                                            {(isAdmin || user?.uid === r.authorId) && <button onClick={()=>deleteReply(r.id)} className="text-slate-600 hover:text-red-400"><i className="fa-solid fa-trash text-xs"></i></button>}
+                                        </div>
+                                    </div>
                                     <RichText content={r.content} />
                                 </div>
                             </div>
@@ -312,11 +437,12 @@
         }
 
         function App() {
-            const [view, setView] = useState('home');
+            const [view, setView] = useState('home'); // home, create, thread, profile
             const [user, setUser] = useState(null);
             const [currentTopic, setCurrentTopic] = useState(null);
-            const [viewUserId, setViewUserId] = useState(null);
+            const [viewUserId, setViewUserId] = useState(null); // For profile view
             const [isConfigured, setIsConfigured] = useState(false);
+            const [showAdmin, setShowAdmin] = useState(false);
 
             useEffect(() => {
                 if (firebaseConfig.apiKey !== "YOUR_API_KEY_HERE") {
@@ -328,24 +454,18 @@
                 }
             }, []);
 
-            const openProfile = (uid) => { setViewUserId(uid); setView('profile'); };
+            const openProfile = () => { 
+                if(user) {
+                    setViewUserId(user.uid); 
+                    setView('profile'); 
+                }
+            };
 
             if (!isConfigured) return <SetupScreen />;
             return (
                 <div className="min-h-screen pb-10">
-                    <nav className="glass-panel sticky top-0 z-50 border-b border-slate-700/50 mb-6">
-                        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setView('home')}><span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">BabaForum</span></div>
-                            <div className="flex items-center gap-4">
-                                {user ? (
-                                    <>
-                                        <button onClick={() => openProfile(user.uid)} className="flex items-center gap-2 hover:bg-slate-800 px-2 py-1 rounded transition-colors"><img src={user.photoURL} className="w-8 h-8 rounded-full border border-slate-600" /><span className="text-sm text-slate-300 hidden md:block">Me</span></button>
-                                        <button onClick={() => auth.signOut()} className="text-slate-400 hover:text-white"><i className="fa-solid fa-right-from-bracket"></i></button>
-                                    </>
-                                ) : <button onClick={() => {const p = new firebase.auth.GoogleAuthProvider(); auth.signInWithPopup(p)}} className="btn-primary text-white px-4 py-2 rounded-lg text-sm">Sign In</button>}
-                            </div>
-                        </div>
-                    </nav>
+                    <Navbar user={user} onViewChange={setView} onOpenAdmin={() => setShowAdmin(true)} />
+                    {showAdmin && <AdminDashboard onClose={() => setShowAdmin(false)} />}
                     {view === 'home' && <TopicList user={user} onViewChange={setView} setCurrentTopic={setCurrentTopic} setViewUserId={setViewUserId} />}
                     {view === 'create' && user && <CreateTopic user={user} onViewChange={setView} />}
                     {view === 'thread' && currentTopic && <ThreadView user={user} topic={currentTopic} onViewChange={setView} setViewUserId={setViewUserId} />}
