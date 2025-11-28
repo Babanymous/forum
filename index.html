@@ -31,14 +31,12 @@
         .btn-outline { border: 1px solid #475569; color: #94a3b8; transition: all 0.2s; }
         .prose a { color: #818cf8; text-decoration: underline; }
         .prose strong { color: white; font-weight: 700; }
-        .prose img { max-width: 100%; border-radius: 8px; margin: 10px 0; border: 1px solid #334155; }
+        .prose img { max-width: 100%; border-radius: 8px; margin: 10px 0; border: 1px solid #334155; cursor: zoom-in; }
         .prose code { background: #1e293b; padding: 2px 6px; rounded: 4px; font-family: monospace; color: #e2e8f0; }
-        
         .badge-new { background: #475569; color: #e2e8f0; }
         .badge-member { background: #059669; color: #a7f3d0; }
         .badge-regular { background: #2563eb; color: #bfdbfe; }
         .badge-legend { background: linear-gradient(45deg, #f59e0b, #b45309); color: #fffbeb; border: 1px solid #fcd34d; }
-        
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
@@ -119,30 +117,44 @@
             }
         };
 
-        // --- COMPONENTS ---
-
-        function SetupScreen() {
+        // --- LIGHTBOX COMPONENT ---
+        function Lightbox({ src, onClose }) {
             return (
-                <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
-                    <div className="glass-panel p-8 rounded-2xl text-center fade-in">
-                        <h1 className="text-2xl font-bold text-white mb-2">Setup Required</h1>
-                        <p className="text-slate-400 mb-6">Please add your Firebase Keys to index.html</p>
-                        <button onClick={() => window.location.reload()} className="btn-primary text-white px-6 py-2 rounded-lg">Refresh</button>
-                    </div>
+                <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 cursor-pointer" onClick={onClose}>
+                    <img src={src} className="max-w-full max-h-full rounded-lg shadow-2xl cursor-default" onClick={e => e.stopPropagation()} />
+                    <button className="absolute top-4 right-4 text-white text-3xl hover:text-red-500"><i className="fa-solid fa-xmark"></i></button>
                 </div>
             );
         }
 
+        // --- RICH TEXT WITH ZOOM ---
         function RichText({ content }) {
+            const [zoomImg, setZoomImg] = useState(null);
+
+            const handleClick = (e) => {
+                if (e.target.tagName === 'IMG') {
+                    setZoomImg(e.target.src);
+                }
+            };
+
             const getMarkdownText = () => {
                 if (!window.marked) return { __html: content };
                 const safeText = content.replace(/</g, "&lt;").replace(/>/g, "&gt;"); 
                 return { __html: marked.parse(safeText) };
             };
-            return <div className="prose text-slate-300 text-sm leading-relaxed" dangerouslySetInnerHTML={getMarkdownText()} />;
+
+            return (
+                <>
+                    <div className="prose text-slate-300 text-sm leading-relaxed" 
+                         dangerouslySetInnerHTML={getMarkdownText()} 
+                         onClick={handleClick}
+                    />
+                    {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
+                </>
+            );
         }
 
-        // --- THE MISSING COMPONENT ---
+        // --- LIKE BUTTON ---
         function LikeButton({ user, docId, collection, likes, likedBy, authorId }) {
             const [isLiked, setIsLiked] = useState(false);
             const [count, setCount] = useState(likes || 0);
@@ -187,6 +199,18 @@
                     <i className={`${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart`}></i>
                     <span className="text-xs font-bold">{count > 0 ? count : ''}</span>
                 </button>
+            );
+        }
+
+        function SetupScreen() {
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
+                    <div className="glass-panel p-8 rounded-2xl text-center fade-in">
+                        <h1 className="text-2xl font-bold text-white mb-2">Setup Required</h1>
+                        <p className="text-slate-400 mb-6">Please add your Firebase Keys to index.html</p>
+                        <button onClick={() => window.location.reload()} className="btn-primary text-white px-6 py-2 rounded-lg">Refresh</button>
+                    </div>
+                </div>
             );
         }
 
@@ -446,14 +470,11 @@
                                         {(isAdmin || user?.uid === topic.authorId) && <button onClick={(e)=>deleteTopic(e,topic)} className="text-slate-500 hover:text-red-400"><i className="fa-solid fa-trash"></i></button>}
                                     </div>
                                 </div>
-                                
-                                {/* VISUAL FEED IMAGE */}
                                 {topic.topicImage && (
                                     <div className="w-full h-48 bg-slate-900 rounded-lg my-3 overflow-hidden border border-slate-700">
                                         <img src={topic.topicImage} className="w-full h-full object-cover" alt="Preview"/>
                                     </div>
                                 )}
-
                                 <div className="text-slate-400 text-sm line-clamp-2 mt-1"><RichText content={topic.preview||""}/></div>
                                 <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
                                     <span className={`text-[10px] px-2 py-0.5 rounded ${getRank(0).class}`}>{topic.authorRank || 'Member'}</span>
@@ -477,7 +498,6 @@
                 e.preventDefault();
                 setSubmitting(true);
                 
-                // EXTRACT IMAGE
                 const imgMatch = form.content.match(/!\[Image\]\((.*?)\)/);
                 const topicImage = imgMatch ? imgMatch[1] : null;
                 const cleanContent = form.content.replace(/!\[Image\]\(.*?\)/g, '[Image] ');
