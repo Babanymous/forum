@@ -4,7 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BabaForum</title>
-    <script>window.onerror=function(m,u,l){if(m.includes("ResizeObserver"))return;document.body.innerHTML='<div style="color:red;padding:20px;background:black;"><h1>Error</h1><p>'+m+'</p><p>Line: '+l+'</p></div>'}</script>
+    
+    <script>
+        window.onerror = function(msg, url, line) {
+            if (msg.includes("ResizeObserver")) return;
+            document.body.innerHTML = '<div style="color:red; padding:20px; background:black; font-family:monospace;"><h1>Error Detected</h1><p>'+msg+'</p><p>Line: '+line+'</p></div>';
+        };
+    </script>
+
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -24,13 +31,14 @@
         .btn-outline { border: 1px solid #475569; color: #94a3b8; transition: all 0.2s; }
         .prose a { color: #818cf8; text-decoration: underline; }
         .prose strong { color: white; font-weight: 700; }
-        .prose img { max-width: 100%; border-radius: 8px; margin: 10px 0; border: 1px solid #334155; cursor: pointer; transition: transform 0.2s; }
-        .prose img:hover { transform: scale(1.01); }
+        .prose img { max-width: 100%; border-radius: 8px; margin: 10px 0; border: 1px solid #334155; }
         .prose code { background: #1e293b; padding: 2px 6px; rounded: 4px; font-family: monospace; color: #e2e8f0; }
+        
         .badge-new { background: #475569; color: #e2e8f0; }
         .badge-member { background: #059669; color: #a7f3d0; }
         .badge-regular { background: #2563eb; color: #bfdbfe; }
         .badge-legend { background: linear-gradient(45deg, #f59e0b, #b45309); color: #fffbeb; border: 1px solid #fcd34d; }
+        
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
@@ -95,6 +103,24 @@
             });
         };
 
+        const ensureUserProfile = async (user) => {
+            if(!user || !db) return;
+            const userRef = db.collection('users').doc(user.uid);
+            const doc = await userRef.get();
+            if (!doc.exists) {
+                await userRef.set({
+                    displayName: user.displayName,
+                    photoURL: user.photoURL,
+                    bio: "Just joined BabaForum!",
+                    followers: [],
+                    following: [],
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        };
+
+        // --- COMPONENTS ---
+
         function SetupScreen() {
             return (
                 <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
@@ -107,45 +133,167 @@
             );
         }
 
-        // --- NEW: LIGHTBOX FOR ZOOMING IMAGES ---
-        function Lightbox({ src, onClose }) {
+        function RichText({ content }) {
+            const getMarkdownText = () => {
+                if (!window.marked) return { __html: content };
+                const safeText = content.replace(/</g, "&lt;").replace(/>/g, "&gt;"); 
+                return { __html: marked.parse(safeText) };
+            };
+            return <div className="prose text-slate-300 text-sm leading-relaxed" dangerouslySetInnerHTML={getMarkdownText()} />;
+        }
+
+        // --- THE MISSING COMPONENT ---
+        function LikeButton({ user, docId, collection, likes, likedBy, authorId }) {
+            const [isLiked, setIsLiked] = useState(false);
+            const [count, setCount] = useState(likes || 0);
+            
+            useEffect(() => { 
+                if (user && likedBy?.includes(user.uid)) setIsLiked(true); 
+            }, [user, likedBy]);
+
+            const handleLike = async (e) => {
+                e.stopPropagation();
+                if (!user) return alert("Please sign in to vote!");
+                const docRef = db.collection(collection).doc(docId);
+                const newStatus = !isLiked;
+                setIsLiked(newStatus);
+                setCount(prev => newStatus ? prev + 1 : prev - 1);
+                
+                try {
+                    const batch = db.batch();
+                    batch.update(docRef, {
+                        likes: firebase.firestore.FieldValue.increment(newStatus ? 1 : -1),
+                        likedBy: newStatus ? firebase.firestore.FieldValue.arrayUnion(user.uid) : firebase.firestore.FieldValue.arrayRemove(user.uid)
+                    });
+                    
+                    if (newStatus && authorId && authorId !== user.uid) {
+                        batch.set(db.collection('notifications').doc(), {
+                            toUserId: authorId, 
+                            fromName: user.displayName, 
+                            message: "liked your post", 
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp(), 
+                            read: false
+                        });
+                    }
+                    await batch.commit();
+                } catch (error) { 
+                    setIsLiked(!newStatus); 
+                    setCount(prev => newStatus ? prev - 1 : prev + 1); 
+                }
+            };
+
             return (
-                <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4" onClick={onClose}>
-                    <img src={src} className="max-w-full max-h-full rounded-lg shadow-2xl" />
-                    <button className="absolute top-4 right-4 text-white text-2xl"><i className="fa-solid fa-xmark"></i></button>
+                <button onClick={handleLike} className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${isLiked ? 'text-pink-500 bg-pink-500/10' : 'text-slate-500 hover:bg-slate-700'}`}>
+                    <i className={`${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart`}></i>
+                    <span className="text-xs font-bold">{count > 0 ? count : ''}</span>
+                </button>
+            );
+        }
+
+        function ImageUpload({ onUpload }) {
+            const [uploading, setUploading] = useState(false);
+            const handleFile = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setUploading(true);
+                try {
+                    const base64String = await compressImage(file);
+                    onUpload(base64String);
+                } catch (error) {
+                    alert("Upload failed: " + error.message);
+                } finally {
+                    setUploading(false);
+                }
+            };
+            return (
+                <label className="cursor-pointer text-slate-400 hover:text-indigo-400 flex items-center gap-2 text-sm">
+                    <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
+                    {uploading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-regular fa-image"></i>}
+                    {uploading ? "Processing..." : "Add Image"}
+                </label>
+            );
+        }
+
+        function Notifications({ user, onClose }) {
+            const [notes, setNotes] = useState([]);
+            useEffect(() => {
+                const unsub = db.collection('notifications').where('toUserId', '==', user.uid).orderBy('createdAt', 'desc').limit(20)
+                    .onSnapshot(snap => setNotes(snap.docs.map(d => ({id: d.id, ...d.data()}))));
+                return () => unsub();
+            }, [user]);
+
+            const markRead = (id) => {
+                db.collection('notifications').doc(id).update({ read: true });
+            };
+
+            return (
+                <div className="absolute top-16 right-4 w-80 glass-panel rounded-xl shadow-2xl overflow-hidden z-50 border border-slate-600">
+                    <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
+                        <h3 className="font-bold text-white text-sm">Notifications</h3>
+                        <button onClick={onClose}><i className="fa-solid fa-xmark text-slate-400"></i></button>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                        {notes.length === 0 && <div className="p-4 text-center text-slate-500 text-sm">No notifications yet.</div>}
+                        {notes.map(n => (
+                            <div key={n.id} onClick={() => markRead(n.id)} className={`p-3 border-b border-slate-700/50 text-sm cursor-pointer hover:bg-slate-700 ${n.read ? 'opacity-50' : 'bg-indigo-500/10'}`}>
+                                <div className="font-bold text-indigo-300">{n.fromName}</div>
+                                <div className="text-slate-300">{n.message}</div>
+                                <div className="text-xs text-slate-500 mt-1">{new Date(n.createdAt?.seconds * 1000).toLocaleTimeString()}</div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             );
         }
 
-        function RichText({ content }) {
-            const [zoomImg, setZoomImg] = useState(null);
-            
-            // Handle clicks on images inside content
-            const handleClick = (e) => {
-                if (e.target.tagName === 'IMG') {
-                    setZoomImg(e.target.src);
-                }
-            };
+        function Navbar({ user, onViewChange, onOpenAdmin, setViewUserId }) {
+            const [showNotes, setShowNotes] = useState(false);
+            const [unreadCount, setUnreadCount] = useState(0);
+            const isAdmin = user && user.uid === ADMIN_UID;
 
-            const getMarkdownText = () => {
-                if (!window.marked) return { __html: content };
-                // Basic sanitization
-                const safeText = content.replace(/<script/gi, "&lt;script");
-                return { __html: marked.parse(safeText) };
+            useEffect(() => {
+                if(!user) return;
+                const unsub = db.collection('notifications').where('toUserId', '==', user.uid).where('read', '==', false)
+                    .onSnapshot(snap => setUnreadCount(snap.size));
+                return () => unsub();
+            }, [user]);
+
+            const handleLogin = () => {
+                if (!auth) return alert("Config Error");
+                auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => alert(e.message));
             };
 
             return (
-                <>
-                    <div className="prose text-slate-300 text-sm leading-relaxed" 
-                         dangerouslySetInnerHTML={getMarkdownText()} 
-                         onClick={handleClick}
-                    />
-                    {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
-                </>
+                <nav className="glass-panel sticky top-0 z-50 border-b border-slate-700/50">
+                    <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => onViewChange('home')}>
+                            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">BabaForum</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            {user ? (
+                                <>
+                                    {isAdmin && <button onClick={onOpenAdmin} className="text-amber-400"><i className="fa-solid fa-lock"></i></button>}
+                                    <div className="relative">
+                                        <button onClick={() => setShowNotes(!showNotes)} className="text-slate-400 hover:text-white relative p-2">
+                                            <i className="fa-regular fa-bell text-lg"></i>
+                                            {unreadCount > 0 && <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{unreadCount}</span>}
+                                        </button>
+                                        {showNotes && <Notifications user={user} onClose={() => setShowNotes(false)} />}
+                                    </div>
+                                    <button onClick={() => { setViewUserId(user.uid); onViewChange('profile'); }} className="w-8 h-8 rounded-full overflow-hidden border border-slate-600">
+                                        <img src={user.photoURL} />
+                                    </button>
+                                    <button onClick={() => auth.signOut()} className="text-slate-400 hover:text-white"><i className="fa-solid fa-right-from-bracket"></i></button>
+                                </>
+                            ) : (
+                                <button onClick={handleLogin} className="btn-primary text-white px-6 py-2 rounded-lg font-medium text-sm">Sign In</button>
+                            )}
+                        </div>
+                    </div>
+                </nav>
             );
         }
 
-        // --- ADMIN PANEL ---
         function AdminDashboard({ onClose }) {
             const [stats, setStats] = useState({ topics: 0, replies: 0 });
             const [loading, setLoading] = useState(true);
@@ -161,43 +309,53 @@
                 fetchStats();
             }, []);
 
+            const runCleanup = async () => {
+                if(!confirm("Are you sure? This deletes posts older than 365 days.")) return;
+                setCleaning(true);
+                try {
+                    const oneYearAgo = new Date();
+                    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                    const snapshot = await db.collection('topics').where('createdAt', '<', oneYearAgo).limit(50).get();
+                    
+                    const batch = db.batch();
+                    for (const doc of snapshot.docs) {
+                        batch.delete(doc.ref);
+                        const replies = await db.collection('replies').where('topicId', '==', doc.id).get();
+                        replies.forEach(r => batch.delete(r.ref));
+                    }
+                    await batch.commit();
+                    alert(`Deleted ${snapshot.size} old topics and their replies.`);
+                    const t = await db.collection('topics').get();
+                    const r = await db.collection('replies').get();
+                    setStats({ topics: t.size, replies: r.size });
+                } catch (err) { alert("Error: " + err.message); }
+                setCleaning(false);
+            };
+
             const cleanOrphans = async () => {
-                if(!confirm("Clean ghost replies?")) return;
+                if(!confirm("This will find and delete 'Ghost Replies' (replies to deleted topics).")) return;
                 setCleaning(true);
                 try {
                     const topicsSnap = await db.collection('topics').get();
                     const topicIds = new Set(topicsSnap.docs.map(d => d.id));
                     const repliesSnap = await db.collection('replies').get();
                     const batch = db.batch();
-                    let count = 0;
+                    let deleteCount = 0;
                     repliesSnap.forEach(doc => {
-                        if (!doc.data().topicId || !topicIds.has(doc.data().topicId)) {
+                        const data = doc.data();
+                        if (!data.topicId || !topicIds.has(data.topicId)) {
                             batch.delete(doc.ref);
-                            count++;
+                            deleteCount++;
                         }
                     });
-                    if(count>0) await batch.commit();
-                    alert(`Cleaned ${count} ghosts.`);
-                    setStats(prev => ({...prev, replies: prev.replies - count}));
-                } catch(e) { alert(e.message); }
-                setCleaning(false);
-            };
-
-            const runPrune = async () => {
-                if(!confirm("Delete topics > 1 year old?")) return;
-                setCleaning(true);
-                try {
-                    const date = new Date(); date.setFullYear(date.getFullYear()-1);
-                    const snap = await db.collection('topics').where('createdAt', '<', date).limit(50).get();
-                    const batch = db.batch();
-                    for(const d of snap.docs) {
-                        batch.delete(d.ref);
-                        const rs = await db.collection('replies').where('topicId','==',d.id).get();
-                        rs.forEach(r => batch.delete(r.ref));
+                    if (deleteCount > 0) {
+                        await batch.commit();
+                        alert(`Success! Removed ${deleteCount} ghost replies.`);
+                        setStats(prev => ({...prev, replies: prev.replies - deleteCount}));
+                    } else {
+                        alert("Database is clean!");
                     }
-                    await batch.commit();
-                    alert(`Pruned ${snap.size} topics.`);
-                } catch(e) { alert(e.message); }
+                } catch (e) { alert(e.message); }
                 setCleaning(false);
             };
 
@@ -214,7 +372,7 @@
                                 </div>
                                 <div className="border-t border-slate-700 pt-6 space-y-3">
                                     <button onClick={cleanOrphans} disabled={cleaning} className="w-full btn-primary py-2 rounded-lg text-sm">{cleaning?'...':'Clean Ghost Replies'}</button>
-                                    <button onClick={runPrune} disabled={cleaning} className="w-full btn-danger py-2 rounded-lg text-sm">{cleaning?'...':'Prune Old Topics'}</button>
+                                    <button onClick={runCleanup} disabled={cleaning} className="w-full btn-danger py-2 rounded-lg text-sm">{cleaning?'...':'Prune Old Topics'}</button>
                                 </div>
                             </div>
                         )}
@@ -223,142 +381,6 @@
             );
         }
 
-        const ensureUserProfile = async (user) => {
-            if(!user || !db) return;
-            const userRef = db.collection('users').doc(user.uid);
-            const doc = await userRef.get();
-            if (!doc.exists) {
-                await userRef.set({ displayName: user.displayName, photoURL: user.photoURL, bio: "New member", followers: [], following: [], createdAt: firebase.firestore.FieldValue.serverTimestamp(), postCount: 0 });
-            }
-        };
-
-        function Notifications({ user, onClose }) {
-            const [notes, setNotes] = useState([]);
-            useEffect(() => {
-                const unsub = db.collection('notifications').where('toUserId', '==', user.uid).orderBy('createdAt', 'desc').limit(20)
-                    .onSnapshot(snap => setNotes(snap.docs.map(d => ({id: d.id, ...d.data()}))));
-                return () => unsub();
-            }, [user]);
-            const markRead = (id) => db.collection('notifications').doc(id).update({ read: true });
-            return (
-                <div className="absolute top-16 right-4 w-80 glass-panel rounded-xl shadow-2xl overflow-hidden z-50 border border-slate-600">
-                    <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center"><h3 className="font-bold text-white text-sm">Notifications</h3><button onClick={onClose}><i className="fa-solid fa-xmark text-slate-400"></i></button></div>
-                    <div className="max-h-80 overflow-y-auto">
-                        {notes.length === 0 && <div className="p-4 text-center text-slate-500 text-sm">No notifications.</div>}
-                        {notes.map(n => (
-                            <div key={n.id} onClick={() => markRead(n.id)} className={`p-3 border-b border-slate-700/50 text-sm cursor-pointer hover:bg-slate-700 ${n.read ? 'opacity-50' : 'bg-indigo-500/10'}`}>
-                                <div className="font-bold text-indigo-300">{n.fromName}</div>
-                                <div className="text-slate-300">{n.message}</div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            );
-        }
-
-        function Navbar({ user, onViewChange, onOpenAdmin, setViewUserId }) {
-            const [showNotes, setShowNotes] = useState(false);
-            const [unreadCount, setUnreadCount] = useState(0);
-            const isAdmin = user && user.uid === ADMIN_UID;
-            useEffect(() => {
-                if(!user) return;
-                const unsub = db.collection('notifications').where('toUserId', '==', user.uid).where('read', '==', false).onSnapshot(snap => setUnreadCount(snap.size));
-                return () => unsub();
-            }, [user]);
-            const handleLogin = () => {
-                if (!auth) return alert("Config Error");
-                auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => alert(e.message));
-            };
-            return (
-                <nav className="glass-panel sticky top-0 z-50 border-b border-slate-700/50">
-                    <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => onViewChange('home')}><span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">BabaForum</span></div>
-                        <div className="flex items-center gap-4">
-                            {user ? (
-                                <>
-                                    {isAdmin && <button onClick={onOpenAdmin} className="text-amber-400"><i className="fa-solid fa-lock"></i></button>}
-                                    <div className="relative">
-                                        <button onClick={() => setShowNotes(!showNotes)} className="text-slate-400 hover:text-white relative p-2">
-                                            <i className="fa-regular fa-bell text-lg"></i>
-                                            {unreadCount > 0 && <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{unreadCount}</span>}
-                                        </button>
-                                        {showNotes && <Notifications user={user} onClose={() => setShowNotes(false)} />}
-                                    </div>
-                                    <button onClick={() => { setViewUserId(user.uid); onViewChange('profile'); }} className="w-8 h-8 rounded-full overflow-hidden border border-slate-600"><img src={user.photoURL} /></button>
-                                    <button onClick={() => auth.signOut()} className="text-slate-400 hover:text-white"><i className="fa-solid fa-right-from-bracket"></i></button>
-                                </>
-                            ) : <button onClick={handleLogin} className="btn-primary text-white px-6 py-2 rounded-lg font-medium text-sm">Sign In</button>}
-                        </div>
-                    </div>
-                </nav>
-            );
-        }
-
-        function ImageUpload({ onUpload }) {
-            const [uploading, setUploading] = useState(false);
-            const handleFile = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                setUploading(true);
-                try { const b64 = await compressImage(file); onUpload(b64); } catch (e) { alert(e.message); } finally { setUploading(false); }
-            };
-            return (
-                <label className="cursor-pointer text-slate-400 hover:text-indigo-400 flex items-center gap-2 text-sm">
-                    <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
-                    {uploading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-regular fa-image"></i>}
-                    {uploading ? "Processing..." : "Add Image"}
-                </label>
-            );
-        }
-
-        function CreateTopic({ user, onViewChange }) {
-            const [form, setForm] = useState({ title: '', content: '', tag: 'General' });
-            const [submitting, setSubmitting] = useState(false);
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setSubmitting(true);
-                
-                // EXTRACT IMAGE FROM CONTENT FOR PREVIEW
-                const imgMatch = form.content.match(/!\[Image\]\((.*?)\)/);
-                const topicImage = imgMatch ? imgMatch[1] : null;
-                
-                // CLEAN CONTENT FOR PREVIEW TEXT (Remove image code)
-                const cleanContent = form.content.replace(/!\[Image\]\(.*?\)/g, '[Image] ');
-                const previewText = cleanContent.substring(0, 100) + '...';
-
-                const userRef = db.collection('users').doc(user.uid);
-                const userDoc = await userRef.get();
-                const currentCount = (userDoc.data()?.postCount || 0) + 1;
-                await userRef.update({ postCount: currentCount });
-                
-                await db.collection('topics').add({
-                    ...form, 
-                    preview: previewText, // Use clean preview
-                    topicImage: topicImage, // Store image separately for Feed
-                    authorId: user.uid, authorName: user.displayName, authorPhoto: user.photoURL, authorRank: getRank(currentCount).label,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(), replyCount: 0, likes: 0, likedBy: [], isPinned: false
-                });
-                setSubmitting(false);
-                onViewChange('home');
-            };
-            const handleImageInsert = (url) => setForm(prev => ({ ...prev, content: prev.content + `\n![Image](${url})\n` }));
-            return (
-                <div className="max-w-2xl mx-auto p-4 fade-in">
-                    <button onClick={() => onViewChange('home')} className="text-slate-400 mb-4"><i className="fa-solid fa-arrow-left"></i> Back</button>
-                    <div className="glass-panel p-8 rounded-2xl">
-                        <h2 className="text-2xl font-bold text-white mb-6">New Topic</h2>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <input className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white" placeholder="Title" value={form.title} onChange={e=>setForm({...form, title:e.target.value})} required />
-                            <select className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white" value={form.tag} onChange={e=>setForm({...form, tag:e.target.value})}><option>General</option><option>Help</option><option>Showcase</option><option>Ideas</option></select>
-                            <div><textarea className="w-full h-48 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white mb-2" placeholder="Write something..." value={form.content} onChange={e=>setForm({...form, content:e.target.value})} required /><ImageUpload onUpload={handleImageInsert} /></div>
-                            <button type="submit" disabled={submitting} className="w-full btn-primary text-white py-3 rounded-xl font-bold">{submitting ? "Publishing..." : "Post"}</button>
-                        </form>
-                    </div>
-                </div>
-            );
-        }
-
-        // --- UPDATED TOPIC LIST (VISUAL FEED) ---
         function TopicList({ user, onViewChange, setCurrentTopic, setViewUserId }) {
             const [topics, setTopics] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -386,7 +408,16 @@
             });
 
             const goToProfile = (e, uid) => { e.stopPropagation(); setViewUserId(uid); onViewChange('profile'); };
-            const deleteTopic = async (e, t) => { e.stopPropagation(); if(confirm("Delete topic + replies?")) { const b = db.batch(); b.delete(db.collection('topics').doc(t.id)); const rs = await db.collection('replies').where('topicId','==',t.id).get(); rs.forEach(r => b.delete(r.ref)); await b.commit(); }};
+            const deleteTopic = async (e, t) => { 
+                e.stopPropagation(); 
+                if(confirm("Delete topic + replies?")) { 
+                    const b = db.batch(); 
+                    b.delete(db.collection('topics').doc(t.id)); 
+                    const rs = await db.collection('replies').where('topicId','==',t.id).get(); 
+                    rs.forEach(r => b.delete(r.ref)); 
+                    await b.commit(); 
+                }
+            };
             const togglePin = async (e, topic) => { e.stopPropagation(); await db.collection('topics').doc(topic.id).update({ isPinned: !topic.isPinned }); };
 
             return (
@@ -439,7 +470,51 @@
             );
         }
 
-        // --- Standard ThreadView, ProfileView, LikeButton, App (Simplified for brevity as they haven't changed much) ---
+        function CreateTopic({ user, onViewChange }) {
+            const [form, setForm] = useState({ title: '', content: '', tag: 'General' });
+            const [submitting, setSubmitting] = useState(false);
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setSubmitting(true);
+                
+                // EXTRACT IMAGE
+                const imgMatch = form.content.match(/!\[Image\]\((.*?)\)/);
+                const topicImage = imgMatch ? imgMatch[1] : null;
+                const cleanContent = form.content.replace(/!\[Image\]\(.*?\)/g, '[Image] ');
+                const previewText = cleanContent.substring(0, 100) + '...';
+
+                const userRef = db.collection('users').doc(user.uid);
+                const userDoc = await userRef.get();
+                const currentCount = (userDoc.data()?.postCount || 0) + 1;
+                await userRef.update({ postCount: currentCount });
+                
+                await db.collection('topics').add({
+                    ...form, 
+                    preview: previewText, 
+                    topicImage: topicImage, 
+                    authorId: user.uid, authorName: user.displayName, authorPhoto: user.photoURL, authorRank: getRank(currentCount).label,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(), replyCount: 0, likes: 0, likedBy: [], isPinned: false
+                });
+                setSubmitting(false);
+                onViewChange('home');
+            };
+            const handleImageInsert = (url) => setForm(prev => ({ ...prev, content: prev.content + `\n![Image](${url})\n` }));
+            return (
+                <div className="max-w-2xl mx-auto p-4 fade-in">
+                    <button onClick={() => onViewChange('home')} className="text-slate-400 mb-4"><i className="fa-solid fa-arrow-left"></i> Back</button>
+                    <div className="glass-panel p-8 rounded-2xl">
+                        <h2 className="text-2xl font-bold text-white mb-6">New Topic</h2>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <input className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white" placeholder="Title" value={form.title} onChange={e=>setForm({...form, title:e.target.value})} required />
+                            <select className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white" value={form.tag} onChange={e=>setForm({...form, tag:e.target.value})}><option>General</option><option>Help</option><option>Showcase</option><option>Ideas</option></select>
+                            <div><textarea className="w-full h-48 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white mb-2" placeholder="Write something..." value={form.content} onChange={e=>setForm({...form, content:e.target.value})} required /><ImageUpload onUpload={handleImageInsert} /></div>
+                            <button type="submit" disabled={submitting} className="w-full btn-primary text-white py-3 rounded-xl font-bold">{submitting ? "Publishing..." : "Post"}</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
         function ThreadView({ user, topic, onViewChange, setViewUserId }) {
             const [replies, setReplies] = useState([]);
             const [newReply, setNewReply] = useState('');
@@ -497,7 +572,7 @@
                     try {
                         const snap = await db.collection('topics').where('authorId','==',viewUserId).orderBy('createdAt','desc').limit(20).get();
                         setPosts(snap.docs.map(d=>({id:d.id,...d.data()})));
-                    } catch(e) { console.log(e); }
+                    } catch(e) { if(e.message.includes("index")) console.warn("Missing Index"); }
                 };
                 if(db && viewUserId) load();
             }, [viewUserId, currentUser]);
@@ -511,17 +586,18 @@
             const save = async () => { await db.collection('users').doc(currentUser.uid).update({displayName:newName, bio:newBio}); setProfile(p=>({...p, displayName:newName, bio:newBio})); setEditing(false); };
             if(!profile) return <div className="text-center p-10 text-slate-500">Loading...</div>;
             const isMe = currentUser && currentUser.uid === viewUserId;
+            const rank = getRank(profile.postCount || 0);
             return (
                 <div className="max-w-4xl mx-auto p-4 fade-in">
                     <button onClick={()=>onViewChange('home')} className="text-slate-400 mb-6 flex gap-2"><i className="fa-solid fa-arrow-left"></i> Back</button>
-                    <div className="glass-panel p-8 rounded-2xl mb-8 flex flex-col md:flex-row items-center gap-6">
+                    <div className="glass-panel p-8 rounded-2xl mb-8 flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
                         <img src={profile.photoURL} className="w-24 h-24 rounded-full border-4 border-indigo-500/30"/>
-                        <div className="flex-1 text-center md:text-left">
+                        <div className="flex-1">
                             {editing ? (
                                 <div className="space-y-3"><input className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white" value={newName} onChange={e=>setNewName(e.target.value)}/><textarea className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white" value={newBio} onChange={e=>setNewBio(e.target.value)}/><button onClick={save} className="btn-primary px-4 py-1 rounded text-white text-sm">Save</button></div>
                             ) : (
                                 <>
-                                    <h1 className="text-3xl font-bold text-white">{profile.displayName}</h1>
+                                    <div className="flex items-center justify-center md:justify-start gap-3"><h1 className="text-3xl font-bold text-white">{profile.displayName}</h1><span className={`text-xs px-2 py-1 rounded ${rank.class}`}>{rank.label}</span></div>
                                     <p className="text-indigo-300 mt-1 mb-4">{profile.bio}</p>
                                     <div className="flex gap-6 justify-center md:justify-start text-sm text-slate-400 mb-4"><span><strong>{profile.followers?.length||0}</strong> Followers</span><span><strong>{profile.following?.length||0}</strong> Following</span></div>
                                     {isMe ? <button onClick={()=>setEditing(true)} className="btn-outline px-4 py-2 rounded-lg text-sm">Edit</button> : <button onClick={toggleFollow} className={`px-6 py-2 rounded-lg font-medium ${isFollowing?'bg-slate-700 text-slate-300':'btn-primary text-white'}`}>{isFollowing?'Following':'Follow'}</button>}
