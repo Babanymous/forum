@@ -54,8 +54,7 @@
 </head>
 <body>
     <div id="root"></div>
-    <script type="text/babel">
-        // ==========================================
+    <script
         const ADMIN_UID = "dqRRlIXKOIaVJDwEsWV1KeOQDgC3"; 
         const firebaseConfig = {
           apiKey: "AIzaSyDycl15CdloFo0LYcWQXwflBTfzscGjAIA",
@@ -123,8 +122,6 @@
                 });
             }
         };
-
-        // --- 2. UI COMPONENTS ---
 
         function SetupScreen() {
             return (
@@ -239,7 +236,6 @@
             );
         }
 
-        // --- 3. INSTALL BUTTON ---
         function InstallButton() {
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             const [isIOS, setIsIOS] = useState(false);
@@ -399,7 +395,6 @@
             );
         }
 
-        // --- 4. PAGE VIEWS ---
 
         function ProfileView({ viewUserId, currentUser, onViewChange, setCurrentTopic }) {
             const [profile, setProfile] = useState(null);
