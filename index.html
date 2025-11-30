@@ -5,22 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BabaForum</title>
     
-    <!-- PWA MANIFEST: This controls the App Icon & Name -->
-    <link rel="manifest" href='data:application/manifest+json,{"name":"BabaForum","short_name":"BabaForum","start_url":".","display":"standalone","background_color":"#0f172a","theme_color":"#0f172a","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/1253/1253838.png","sizes":"512x512","type":"image/png"}]}'>
-    
-    <!-- iOS SUPPORT -->
+    <!-- PWA Manifest -->
+    <link rel="manifest" href='data:application/manifest+json,{"name":"BabaForum","short_name":"BabaForum","start_url":".","display":"standalone","background_color":"#0f172a","theme_color":"#0f172a","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/1041/1041916.png","sizes":"512x512","type":"image/png"}]}'>
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1253/1253838.png">
-
-    <!-- ERROR HANDLER -->
-    <script>
-        window.onerror = function(msg, url, line) {
-            if (msg.includes("ResizeObserver")) return;
-            document.body.innerHTML = '<div style="color:red; padding:20px; background:black; font-family:monospace; z-index:10000; position:fixed; top:0; width:100%;"><h1>Error Detected</h1><p>'+msg+'</p><p>Line: '+line+'</p></div>';
-        };
-    </script>
 
     <!-- LIBRARIES -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -54,7 +42,8 @@
 </head>
 <body>
     <div id="root"></div>
-    <script
+    <script type="text/babel">
+        // ==========================================
         const ADMIN_UID = "dqRRlIXKOIaVJDwEsWV1KeOQDgC3"; 
         const firebaseConfig = {
           apiKey: "AIzaSyDycl15CdloFo0LYcWQXwflBTfzscGjAIA",
@@ -74,9 +63,11 @@
                 auth = firebase.auth();
                 db = firebase.firestore();
             }
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("Firebase Init Error:", e); }
 
         const { useState, useEffect, useRef } = React;
+
+        // --- HELPERS ---
         const getRank = (count) => {
             const base = "badge-base text-[10px] px-2.5 py-1 rounded-full uppercase";
             if (count >= 100) return { label: "Legend", class: `${base} badge-legend` };
@@ -121,6 +112,8 @@
             }
         };
 
+        // --- UI COMPONENTS ---
+
         function SetupScreen() {
             return (
                 <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
@@ -137,7 +130,7 @@
             return (
                 <div className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-4 cursor-pointer fade-in" onClick={onClose}>
                     <img src={src} className="max-w-full max-h-full rounded-2xl shadow-2xl cursor-default" onClick={e => e.stopPropagation()} />
-                    <button className="absolute top-4 right-4 text-white text-3xl hover:text-red-500 bg-black/50 rounded-full w-10 h-10 flex items-center justify-center"><i className="fa-solid fa-xmark"></i></button>
+                    <button className="absolute top-6 right-6 text-white/70 hover:text-white text-4xl transition-colors"><i className="fa-solid fa-xmark"></i></button>
                 </div>
             );
         }
@@ -152,7 +145,7 @@
             };
             return (
                 <>
-                    <div className="prose text-slate-300 text-sm leading-relaxed" dangerouslySetInnerHTML={getMarkdownText()} onClick={handleClick} />
+                    <div className="prose text-slate-300 text-[15px] leading-7" dangerouslySetInnerHTML={getMarkdownText()} onClick={handleClick} />
                     {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
                 </>
             );
@@ -184,8 +177,8 @@
                 } catch (error) { setIsLiked(!newStatus); setCount(prev => newStatus ? prev - 1 : prev + 1); }
             };
             return (
-                <button onClick={handleLike} className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors ${isLiked ? 'text-pink-500 bg-pink-500/10' : 'text-slate-500 hover:bg-slate-700'}`}>
-                    <i className={`${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart`}></i><span className="text-xs font-bold">{count > 0 ? count : ''}</span>
+                <button onClick={handleLike} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all ${isLiked ? 'text-pink-400 bg-pink-500/20' : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}>
+                    <i className={`${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart text-sm`}></i><span className="text-xs font-bold">{count > 0 ? count : ''}</span>
                 </button>
             );
         }
@@ -207,33 +200,6 @@
             );
         }
 
-        function Notifications({ user, onClose }) {
-            const [notes, setNotes] = useState([]);
-            useEffect(() => {
-                const unsub = db.collection('notifications').where('toUserId', '==', user.uid).orderBy('createdAt', 'desc').limit(20)
-                    .onSnapshot(snap => setNotes(snap.docs.map(d => ({id: d.id, ...d.data()}))));
-                return () => unsub();
-            }, [user]);
-            const markRead = (id) => db.collection('notifications').doc(id).update({ read: true });
-            return (
-                <div className="absolute top-16 right-0 w-96 glass-panel rounded-2xl shadow-2xl overflow-hidden z-50 fade-in">
-                    <div className="p-4 bg-slate-900/50 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Notifications</h3><button onClick={onClose}><i className="fa-solid fa-xmark text-slate-400"></i></button></div>
-                    <div className="max-h-[400px] overflow-y-auto">
-                        {notes.length === 0 && <div className="p-8 text-center text-slate-500">No new notifications.</div>}
-                        {notes.map(n => (
-                            <div key={n.id} onClick={() => markRead(n.id)} className={`p-4 border-b border-white/5 cursor-pointer transition-colors flex gap-3 items-start ${n.read ? 'hover:bg-slate-800/50 opacity-70' : 'bg-indigo-500/10 hover:bg-indigo-500/20'}`}>
-                                <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0"><i className="fa-solid fa-bell"></i></div>
-                                <div>
-                                    <p className="text-slate-200 text-sm"><span className="font-bold text-indigo-300">{n.fromName}</span> {n.message}</p>
-                                    <div className="text-xs text-slate-500 mt-1.5">{n.createdAt ? new Date(n.createdAt.seconds * 1000).toLocaleTimeString() : 'Just now'}</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            );
-        }
-
         function InstallButton() {
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             const [isIOS, setIsIOS] = useState(false);
@@ -244,11 +210,8 @@
                     e.preventDefault();
                     setDeferredPrompt(e);
                 });
-                // Detect iOS
                 const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-                if(isIosDevice && !window.navigator.standalone) {
-                    setIsIOS(true);
-                }
+                if(isIosDevice && !window.navigator.standalone) setIsIOS(true);
             }, []);
 
             const handleInstall = async () => {
@@ -282,19 +245,43 @@
             );
         }
 
+        function Notifications({ user, onClose }) {
+            const [notes, setNotes] = useState([]);
+            useEffect(() => {
+                const unsub = db.collection('notifications').where('toUserId', '==', user.uid).orderBy('createdAt', 'desc').limit(20)
+                    .onSnapshot(snap => setNotes(snap.docs.map(d => ({id: d.id, ...d.data()}))));
+                return () => unsub();
+            }, [user]);
+            const markRead = (id) => db.collection('notifications').doc(id).update({ read: true });
+            return (
+                <div className="absolute top-16 right-0 w-96 glass-panel rounded-2xl shadow-2xl overflow-hidden z-50 fade-in">
+                    <div className="p-4 bg-slate-900/50 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Notifications</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark"></i></button></div>
+                    <div className="max-h-[400px] overflow-y-auto">
+                        {notes.length === 0 && <div className="p-8 text-center text-slate-500">No new notifications.</div>}
+                        {notes.map(n => (
+                            <div key={n.id} onClick={() => markRead(n.id)} className={`p-4 border-b border-white/5 cursor-pointer transition-colors flex gap-3 items-start ${n.read ? 'hover:bg-slate-800/50 opacity-70' : 'bg-indigo-500/10 hover:bg-indigo-500/20'}`}>
+                                <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0"><i className="fa-solid fa-bell"></i></div>
+                                <div>
+                                    <p className="text-slate-200 text-sm"><span className="font-bold text-indigo-300">{n.fromName}</span> {n.message}</p>
+                                    <div className="text-xs text-slate-500 mt-1.5">{n.createdAt ? new Date(n.createdAt.seconds * 1000).toLocaleTimeString() : 'Just now'}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
         function Navbar({ user, onViewChange, onOpenAdmin, setViewUserId }) {
             const [showNotes, setShowNotes] = useState(false);
             const [unreadCount, setUnreadCount] = useState(0);
             const isAdmin = user && user.uid === ADMIN_UID;
-
             useEffect(() => {
                 if(!user) return;
                 const unsub = db.collection('notifications').where('toUserId', '==', user.uid).where('read', '==', false).onSnapshot(snap => setUnreadCount(snap.size));
                 return () => unsub();
             }, [user]);
-
             const handleLogin = () => { if (!auth) return alert("Config Error"); auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => alert(e.message)); };
-
             return (
                 <nav className="glass-panel sticky top-0 z-50 border-b-0 shadow-sm backdrop-blur-xl">
                     <div className="max-w-6xl mx-auto px-4 h-20 flex items-center justify-between">
@@ -393,6 +380,7 @@
             );
         }
 
+        // --- 3. PAGE VIEWS ---
 
         function ProfileView({ viewUserId, currentUser, onViewChange, setCurrentTopic }) {
             const [profile, setProfile] = useState(null);
@@ -557,14 +545,12 @@
                 const topicImage = imgMatch ? imgMatch[1] : null;
                 const cleanContent = form.content.replace(/!\[Image\]\(.*?\)/g, '[Image] ');
                 const previewText = cleanContent.substring(0, 120) + '...';
-                
                 const userRef = db.collection('users').doc(user.uid);
                 const userDoc = await userRef.get();
                 const userData = userDoc.data();
                 const realName = userData.displayName || user.displayName;
                 const currentCount = (userData.postCount || 0) + 1;
                 await userRef.update({ postCount: currentCount });
-                
                 await db.collection('topics').add({
                     ...form, 
                     preview: previewText, 
