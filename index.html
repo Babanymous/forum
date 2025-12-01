@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BabaForum</title>
     
+    <!-- PWA Manifest -->
     <link rel="manifest" href='data:application/manifest+json,{"name":"BabaForum","short_name":"BabaForum","start_url":".","display":"standalone","background_color":"#0f172a","theme_color":"#0f172a","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/1041/1041916.png","sizes":"512x512","type":"image/png"}]}'>
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
 
+    <!-- Error Handler -->
     <script>
         window.onerror = function(msg, url, line) {
             if (msg.includes("ResizeObserver")) return;
@@ -16,6 +18,7 @@
         };
     </script>
 
+    <!-- Libraries -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -29,7 +32,23 @@
     
     <style>
         body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2); }
+        
+        /* Standard Glass Panel (For Posts/Feed) */
+        .glass-panel { 
+            background: rgba(30, 41, 59, 0.7); 
+            backdrop-filter: blur(20px); 
+            border: 1px solid rgba(255, 255, 255, 0.08); 
+            box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2); 
+        }
+        
+        /* NEW: Solid Glass Panel (For Menus/Notifications) */
+        .glass-panel-solid { 
+            background: rgba(15, 23, 42, 0.98); /* Almost solid */
+            backdrop-filter: blur(20px); 
+            border: 1px solid rgba(255, 255, 255, 0.08); 
+            box-shadow: 0 10px 40px -5px rgba(0, 0, 0, 0.5); 
+        }
+
         .glass-input { background: rgba(15, 23, 42, 0.5) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; backdrop-filter: blur(10px); }
         .glass-input:focus { border-color: #818cf8 !important; outline: none; }
         .btn-primary { background: linear-gradient(135deg, #4f46e5 0%, #9333ea 100%); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); }
@@ -48,6 +67,7 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
+        // ==========================================
         const ADMIN_UID = "dqRRlIXKOIaVJDwEsWV1KeOQDgC3"; 
         const firebaseConfig = {
           apiKey: "AIzaSyDycl15CdloFo0LYcWQXwflBTfzscGjAIA",
@@ -58,6 +78,7 @@
           appId: "1:428963221608:web:e284a66da91733d2e0abdd",
           measurementId: "G-F2ZTCCXPR2"
         };
+        // ==========================================
 
         let app, auth, db;
         try {
@@ -70,6 +91,7 @@
 
         const { useState, useEffect, useRef } = React;
 
+        // --- HELPERS ---
         const getRank = (count) => {
             const base = "badge-base text-[10px] px-2.5 py-1 rounded-full uppercase";
             if (count >= 100) return { label: "Legend", class: `${base} badge-legend` };
@@ -113,6 +135,8 @@
                 });
             }
         };
+
+        // --- UI COMPONENTS ---
 
         function SetupScreen() {
             return (
@@ -219,7 +243,7 @@
                     <button onClick={handleInstall} className="text-slate-400 hover:text-indigo-400 p-2 relative group"><i className="fa-solid fa-download text-xl"></i></button>
                     {showIOSHelp && (
                         <div className="fixed inset-0 bg-black/90 z-[10000] flex items-center justify-center p-6" onClick={() => setShowIOSHelp(false)}>
-                            <div className="glass-panel p-6 rounded-2xl text-center max-w-sm" onClick={e => e.stopPropagation()}>
+                            <div className="glass-panel-solid p-6 rounded-2xl text-center max-w-sm" onClick={e => e.stopPropagation()}>
                                 <h3 className="text-xl font-bold text-white mb-4">Install on iPhone</h3>
                                 <p className="text-slate-300 mb-4">1. Tap the <i className="fa-solid fa-arrow-up-from-bracket mx-1"></i> <strong>Share</strong> button in your browser bar.</p>
                                 <p className="text-slate-300 mb-6">2. Scroll down and tap <strong>Add to Home Screen</strong>.</p>
@@ -240,8 +264,9 @@
             }, [user]);
             const markRead = (id) => db.collection('notifications').doc(id).update({ read: true });
             return (
-                <div className="absolute top-16 right-0 w-80 glass-panel rounded-2xl shadow-2xl overflow-hidden z-50 fade-in">
-                    <div className="p-4 bg-slate-900/50 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Notifications</h3><button onClick={onClose}><i className="fa-solid fa-xmark text-slate-400"></i></button></div>
+                // CHANGED: glass-panel-solid
+                <div className="absolute top-16 right-0 w-96 glass-panel-solid rounded-2xl shadow-2xl overflow-hidden z-50 fade-in">
+                    <div className="p-4 bg-slate-900/50 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Notifications</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark"></i></button></div>
                     <div className="max-h-[400px] overflow-y-auto">
                         {notes.length === 0 && <div className="p-8 text-center text-slate-500">No new notifications.</div>}
                         {notes.map(n => (
@@ -258,7 +283,6 @@
             );
         }
 
-        // --- MOBILE RESPONSIVE NAVBAR ---
         function Navbar({ user, onViewChange, onOpenAdmin, setViewUserId }) {
             const [showNotes, setShowNotes] = useState(false);
             const [unreadCount, setUnreadCount] = useState(0);
@@ -299,7 +323,7 @@
                                     <button onClick={() => { setViewUserId(user.uid); onViewChange('profile'); }} className="w-10 h-10 rounded-full overflow-hidden border-2 border-slate-700/50 hover:border-indigo-500 transition-all ring-2 ring-transparent hover:ring-indigo-500/30 shadow-md"><img src={user.photoURL} className="w-full h-full object-cover"/></button>
                                     <button onClick={() => auth.signOut()} className="text-slate-400 hover:text-red-400 p-2 transition-colors"><i className="fa-solid fa-right-from-bracket text-lg"></i></button>
                                 </>
-                            ) : <button onClick={handleLogin} className="btn-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm tracking-wide shadow-lg">Sign In</button>}
+                            ) : <button onClick={handleLogin} className="btn-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm tracking-wide shadow-lg">Sign In with Google</button>}
                         </div>
 
                         {/* MOBILE HAMBURGER BUTTON */}
@@ -319,9 +343,9 @@
                         </div>
                     </div>
 
-                    {/* MOBILE DROPDOWN MENU */}
+                    {/* MOBILE DROPDOWN MENU - CHANGED: glass-panel-solid */}
                     {mobileMenuOpen && (
-                        <div className="md:hidden absolute top-20 left-0 w-full glass-panel border-t border-white/10 flex flex-col p-4 gap-4 fade-in z-40">
+                        <div className="md:hidden absolute top-20 left-0 w-full glass-panel-solid border-t border-white/10 flex flex-col p-4 gap-4 fade-in z-40">
                              {user ? (
                                 <>
                                     <div className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-xl" onClick={() => { setViewUserId(user.uid); onViewChange('profile'); setMobileMenuOpen(false); }}>
@@ -334,7 +358,7 @@
                                     <button onClick={()=>{onViewChange('guilds'); setMobileMenuOpen(false);}} className="p-3 bg-slate-800/30 rounded-xl text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-3"><i className="fa-solid fa-users-rectangle text-indigo-400"></i> Guilds</button>
                                     {isAdmin && <button onClick={()=>{onOpenAdmin(); setMobileMenuOpen(false);}} className="p-3 bg-slate-800/30 rounded-xl text-left text-amber-400 hover:bg-slate-800 transition-colors flex items-center gap-3"><i className="fa-solid fa-shield-halved"></i> Admin Panel</button>}
                                     <div className="flex gap-2">
-                                        <div className="flex-1"><InstallButton /></div> {/* Install Button in menu */}
+                                        <div className="flex-1 bg-slate-800/30 rounded-xl flex items-center justify-center"><InstallButton /></div>
                                         <button onClick={() => {auth.signOut(); setMobileMenuOpen(false);}} className="flex-1 p-3 bg-red-500/10 text-red-400 rounded-xl font-bold text-center hover:bg-red-500/20 transition-colors">Sign Out</button>
                                     </div>
                                 </>
@@ -737,18 +761,7 @@
             });
 
             const goToProfile = (e, uid) => { e.stopPropagation(); setViewUserId(uid); onViewChange('profile'); };
-            const deleteTopic = async (e, t) => { 
-                e.stopPropagation(); 
-                if(confirm("Delete?")) { 
-                    const b = db.batch(); 
-                    b.delete(db.collection('topics').doc(t.id)); 
-                    const userRef = db.collection('users').doc(t.authorId); 
-                    b.update(userRef, { postCount: firebase.firestore.FieldValue.increment(-1) }); 
-                    const rs = await db.collection('replies').where('topicId','==',t.id).get(); 
-                    rs.forEach(r => b.delete(r.ref)); 
-                    await b.commit(); 
-                } 
-            };
+            const deleteTopic = async (e, t) => { e.stopPropagation(); if(confirm("Delete?")) { const b = db.batch(); b.delete(db.collection('topics').doc(t.id)); const userRef = db.collection('users').doc(t.authorId); b.update(userRef, { postCount: firebase.firestore.FieldValue.increment(-1) }); const rs = await db.collection('replies').where('topicId','==',t.id).get(); rs.forEach(r => b.delete(r.ref)); await b.commit(); } };
             const togglePin = async (e, topic) => { e.stopPropagation(); await db.collection('topics').doc(topic.id).update({ isPinned: !topic.isPinned }); };
 
             return (
