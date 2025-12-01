@@ -12,7 +12,7 @@
     <script>
         window.onerror = function(msg, url, line) {
             if (msg.includes("ResizeObserver")) return;
-            document.body.innerHTML = '<div style="color:#ff5555; padding:20px; background:#000; font-family:monospace; z-index:10000; position:fixed; top:0; width:100%;"><h1>Error Detected</h1><p>'+msg+'</p><p>Line: '+line+'</p></div>';
+            document.body.innerHTML = '<div style="color:red; padding:20px; background:black; font-family:monospace; z-index:10000; position:fixed; top:0; width:100%;"><h1>Error Detected</h1><p>'+msg+'</p><p>Line: '+line+'</p></div>';
         };
     </script>
 
@@ -121,7 +121,6 @@
     <div class="bg-aurora"></div>
 
     <script type="text/babel">
-        // ==========================================
         const ADMIN_UID = "dqRRlIXKOIaVJDwEsWV1KeOQDgC3"; 
         const firebaseConfig = {
           apiKey: "AIzaSyDycl15CdloFo0LYcWQXwflBTfzscGjAIA",
@@ -132,7 +131,6 @@
           appId: "1:428963221608:web:e284a66da91733d2e0abdd",
           measurementId: "G-F2ZTCCXPR2"
         };
-        // ==========================================
 
         let app, auth, db;
         try {
@@ -145,7 +143,6 @@
 
         const { useState, useEffect, useRef } = React;
 
-        // --- HELPERS ---
         const getRank = (count) => {
             const base = "badge-base text-[10px] px-2.5 py-1 rounded-lg uppercase";
             if (count >= 100) return { label: "Legend", class: `${base} badge-legend` };
@@ -189,8 +186,6 @@
                 });
             }
         };
-
-        // --- UI COMPONENTS ---
 
         function SetupScreen() {
             return (
