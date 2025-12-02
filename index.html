@@ -12,7 +12,7 @@
     <script>
         window.onerror = function(msg, url, line) {
             if (msg.includes("ResizeObserver")) return;
-            document.body.innerHTML = '<div style="color:#ff5555; padding:20px; background:#000; font-family:monospace; z-index:10000; position:fixed; top:0; width:100%;"><h1>Error Detected</h1><p>'+msg+'</p><p>Line: '+line+'</p></div>';
+            document.body.innerHTML = '<div style="color:red; padding:20px; background:black; font-family:monospace; z-index:10000; position:fixed; top:0; width:100%;"><h1>Error Detected</h1><p>'+msg+'</p><p>Line: '+line+'</p></div>';
         };
     </script>
 
@@ -24,6 +24,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics-compat.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
@@ -132,12 +133,13 @@
           measurementId: "G-F2ZTCCXPR2"
         };
 
-        let app, auth, db;
+        let app, auth, db, analytics;
         try {
             if (firebaseConfig.apiKey !== "YOUR_API_KEY_HERE") {
                 app = firebase.initializeApp(firebaseConfig);
                 auth = firebase.auth();
                 db = firebase.firestore();
+                analytics = firebase.analytics();
             }
         } catch (e) { console.error("Firebase Init Error:", e); }
 
