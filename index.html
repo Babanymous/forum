@@ -559,7 +559,6 @@
         function GuildList({ user, onViewChange, setSelectedGuild }) {
             const [guilds, setGuilds] = useState([]);
             const [myGuilds, setMyGuilds] = useState([]);
-            const isAdmin = user && user.uid === ADMIN_UID;
             
             useEffect(() => {
                 db.collection('guilds').orderBy('memberCount', 'desc').onSnapshot(s => setGuilds(s.docs.map(d=>({id:d.id,...d.data()}))));
@@ -581,12 +580,14 @@
                 }
                 await batch.commit();
             };
-
+            
             const deleteGuild = async (e, guildId) => { 
                 e.stopPropagation(); 
                 if(!confirm("Delete this guild permanently?")) return; 
                 await db.collection('guilds').doc(guildId).delete(); 
             };
+            
+            const isAdmin = user && user.uid === ADMIN_UID;
 
             return (
                 <div className="max-w-5xl mx-auto p-6 fade-in space-y-8">
